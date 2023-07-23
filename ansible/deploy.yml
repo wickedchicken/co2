@@ -1,0 +1,93 @@
+---
+- name: Deploy co2 service to Debian host
+  gather_facts: false
+  hosts: all
+  vars:
+    working_dir: "co2"
+  tasks:
+    - name: Get python version
+      ansible.builtin.set_fact:
+        python_version: "{{ lookup('ansible.builtin.file', '{{ playbook_dir }}/../.python-version') }}"
+
+    - name: Install python version
+      ansible.builtin.command:
+        cmd: "/home/{{ ansible_user}}/.pyenv/bin/pyenv install {{ python_version }} --skip-existing"
+      register: pyenv_output
+      changed_when: pyenv_output.stdout != ""
+
+    - name: Make working directory
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user}}/{{ working_dir }}/"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Copy .python-version file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../.python-version"
+        dest: "/home/{{ ansible_user }}/{{ working_dir }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+      register: python_version_output
+
+    - name: Get stats of venv
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user}}/{{ working_dir }}/venv"
+      register: venv_stat_output
+
+    - name: Create venv
+      ansible.builtin.command:
+        cmd: "/home/{{ ansible_user}}/.pyenv/bin/pyenv exec python -m venv /home/{{ ansible_user}}/{{ working_dir }}/venv"
+      environment:
+        PYENV_VERSION: "{{ python_version }}"
+      when: ((not venv_stat_output.stat.isdir is defined) and (not venv_stat_output.stat.isdir)) or python_version_output.changed
+      register: create_venv_output
+
+    - name: Copy requirements.txt file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../requirements.txt"
+        dest: "/home/{{ ansible_user }}/{{ working_dir }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+      register: requirements_output
+
+    - name: Install requirements
+      ansible.builtin.command:
+        cmd: "/home/{{ ansible_user }}/{{ working_dir }}/venv/bin/pip install -r /home/{{ ansible_user}}/{{ working_dir }}/requirements.txt"
+      when: create_venv_output.changed or requirements_output.changed
+
+    - name: Copy co2 file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../co2.py"
+        dest: "/home/{{ ansible_user }}/{{ working_dir }}/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+
+    - name: Make sure user systemd directory exists
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user}}/.config/systemd/user/"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0700'
+
+    - name: Install co2 service
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/templates/co2.service.j2"
+        dest: "/home/{{ ansible_user}}/.config/systemd/user/co2.service"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0600'
+
+    - name: Run co2 service
+      ansible.builtin.systemd:
+        name: co2
+        state: restarted
+        enabled: true
+        scope: user
+        daemon_reload: true
+
