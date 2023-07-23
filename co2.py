@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 import sys, fcntl, time, os
 
@@ -36,19 +36,26 @@ if __name__ == "__main__":
     key = [0xc4, 0xc6, 0xc0, 0x92, 0x40, 0x23, 0xdc, 0x96]
 
     fp = open(sys.argv[1], "a+b",  0)
-
+    
     HIDIOCSFEATURE_9 = 0xC0094806
-    set_report = "\x00" + "".join(chr(e) for e in key)
+    set_report = [0x00] + key
+    set_report = bytearray(set_report)
     fcntl.ioctl(fp, HIDIOCSFEATURE_9, set_report)
 
     while True:
         values = {}
 
         while (0x50 not in values or 0x42 not in values):
-            data = list(ord(e) for e in fp.read(8))
-            decrypted = decrypt(key, data)
+            data = list(fp.read(8))
+
+            decrypted = None
+            if data[4] == 0x0d and (sum(data[:3]) & 0xff) == data[3]:
+                decrypted = data
+            else:
+                decrypted = decrypt(key, data)
+
             if decrypted[4] != 0x0d or (sum(decrypted[:3]) & 0xff) != decrypted[3]:
-                print hd(data), " => ", hd(decrypted),  "Checksum error"
+                print(hd(data), " => ", hd(decrypted),  "Checksum error")
             else:
                 op = decrypted[0]
                 val = decrypted[1] << 8 | decrypted[2]
@@ -59,14 +66,14 @@ if __name__ == "__main__":
                 #print ", ".join( "%s%02X: %04X %5i" % ([" ", "*"][op==k], k, v, v) for (k, v) in sorted(values.items())), "  ",
                 ## From http://co2meters.com/Documentation/AppNotes/AN146-RAD-0401-serial-communication.pdf
                 if 0x50 in values:
-                    print "CO2: %4i" % values[0x50],
+                    print("CO2: %4i" % values[0x50], end=' ')
                 if 0x42 in values:
-                    print "T: %2.2f" % (values[0x42]/16.0-273.15),
+                    print("T: %2.2f" % (values[0x42]/16.0-273.15), end=' ')
                 if 0x44 in values:
-                    print "RH: %2.2f" % (values[0x44]/100.0),
-                print
+                    print("RH: %2.2f" % (values[0x44]/100.0), end=' ')
+                print()
 
-        print 'co2 ppm {}'.format(values[0x50])
-        print 'temperature in c {}'.format(values[0x42]/16.0-273.15)
+        print('co2 ppm {}'.format(values[0x50]))
+        print('temperature in c {}'.format(values[0x42]/16.0-273.15))
 
         time.sleep(60)
