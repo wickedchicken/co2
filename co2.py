@@ -1,6 +1,39 @@
 #!/usr/bin/env python3
 
 import sys, fcntl, time, os
+import tomllib
+import netrc
+import argparse
+import datetime
+
+from pathlib import Path
+
+from peewee import *
+from playhouse.mysql_ext import MariaDBConnectorDatabase
+
+CONFIG_FILE = Path(Path(__file__).parent, 'co2.toml')
+
+def get_config_data():
+    with open(CONFIG_FILE, "rb") as f:
+        return tomllib.load(f)
+
+def get_db_connection_data(config_data):
+    netrc_host = f"{config_data['database']['hostname']}:{config_data['database']['port']}"
+    parsed_netrc = netrc.netrc()
+    login, _, password = parsed_netrc.authenticators(netrc_host)
+    return login, password
+
+db_proxy = DatabaseProxy() # Create a proxy for our db.
+
+class BaseModel(Model):
+    class Meta:
+        database = db_proxy
+
+class LogEntry(BaseModel):
+    room_name = CharField(index=True)
+    recorded = DateTimeField(default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
+    temperature_c = FloatField()
+    co2_ppm = FloatField()
 
 def decrypt(key,  data):
     cstate = [0x48,  0x74,  0x65,  0x6D,  0x70,  0x39,  0x39,  0x65]
@@ -31,11 +64,11 @@ def decrypt(key,  data):
 def hd(d):
     return " ".join("%02X" % e for e in d)
 
-if __name__ == "__main__":
+def inner_loop(args):
     # Key retrieved from /dev/random, guaranteed to be random ;)
     key = [0xc4, 0xc6, 0xc0, 0x92, 0x40, 0x23, 0xdc, 0x96]
 
-    fp = open(sys.argv[1], "a+b",  0)
+    fp = open(args.device_path, "a+b",  0)
     
     HIDIOCSFEATURE_9 = 0xC0094806
     set_report = [0x00] + key
@@ -73,7 +106,53 @@ if __name__ == "__main__":
                     print("RH: %2.2f" % (values[0x44]/100.0), end=' ')
                 print()
 
-        print('co2 ppm {}'.format(values[0x50]))
-        print('temperature in c {}'.format(values[0x42]/16.0-273.15))
+        entry = LogEntry.create(room_name=args.room_name, temperature_c=values[0x42]/16.0-273.15, co2_ppm=values[0x50])
+        entry.save()
+        print('Logged entry {}'.format(entry))
+
 
         time.sleep(60)
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "device_path",
+        help="path to the device to read from, such as /dev/co2mini0",
+        type=Path,
+    )
+    parser.add_argument(
+        "--create-tables",
+        help="create the SQL tables needed for data collection",
+        action='store_true'
+    )
+    parser.add_argument(
+        "--room-name",
+        help="location the sample was taken in",
+        default="living room",
+    )
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    config_data = get_config_data()
+    db_login, db_password = get_db_connection_data(config_data)
+
+    args = get_args()
+
+    db = MariaDBConnectorDatabase(
+        config_data['database']['name'],
+        host=config_data['database']['hostname'],
+        port=int(config_data['database']['port']),
+        user=db_login,
+        password=db_password,
+    )
+    db_proxy.initialize(db)
+    db.connect()
+    try:
+        if args.create_tables:
+            db.create_tables([LogEntry])
+        inner_loop(args)
+    finally:
+        db.close()
+
+
+
