@@ -5,6 +5,7 @@ import tomllib
 import netrc
 import argparse
 import datetime
+import glob
 
 from pathlib import Path
 
@@ -116,9 +117,10 @@ def inner_loop(args):
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "device_path",
+        "--device-path",
         help="path to the device to read from, such as /dev/co2mini0",
         type=Path,
+        default=Path(glob.glob("/dev/co2mini*")[0]),
     )
     parser.add_argument(
         "--create-tables",
@@ -131,6 +133,7 @@ def get_args():
         default="living room",
     )
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     config_data = get_config_data()

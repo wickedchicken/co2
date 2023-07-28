@@ -5,7 +5,7 @@ After=syslog.target
 [Service]
 Type=simple
 WorkingDirectory=/home/{{ ansible_user }}/co2/
-ExecStart=/home/{{ ansible_user }}/{{ working_dir }}/venv/bin/python co2.py /dev/co2mini0
+ExecStart=/home/{{ ansible_user }}/{{ working_dir }}/venv/bin/python co2.py
 # Wait for sensor to warm up
 ExecStartPre=/bin/sleep 30
 Restart=on-failure
