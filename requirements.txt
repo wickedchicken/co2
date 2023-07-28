@@ -1,2 +1,4 @@
 mariadb
 peewee
+plotly
+pandas
