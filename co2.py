@@ -6,6 +6,7 @@ import netrc
 import argparse
 import datetime
 import glob
+import traceback
 
 from pathlib import Path
 
@@ -41,9 +42,26 @@ class LogEntry(BaseModel):
 
 
 def meteoblue_request(meteoblue_key, lat, lon):
-    url = f"https://my.meteoblue.com/packages/current?apikey={meteoblue_key}&lat={lat}&lon={lon}&format=json"
-    print(url)
-    return requests.get(url).json()['temperature']
+    url = f"https://my.meteoblue.com/packages/current?apikey={meteoblue_key}&lat={lat}&lon={lon}&tz=UTC&format=json"
+    data = requests.get(url).json()
+    outdoor_temperature_c = data['data_current']['temperature']
+    recorded = datetime.datetime.fromisoformat(data['data_current']['time']).replace(tzinfo=datetime.timezone.utc)
+
+    try:
+        meteoblue_entry = LogEntry.create(
+            measurement_type='meteoblue',
+            temperature_c=outdoor_temperature_c,
+            recorded=recorded,
+            room_name='balcony',
+        )
+        meteoblue_entry.save()
+        print('Logged meteoblue entry {}'.format(meteoblue_entry), flush=True)
+    except requests.RequestException:
+        print('Error with meteoblue request:', flush=True)
+        traceback.print_exc()
+    except KeyError:
+        print('Error accessing meteoblue data', flush=True)
+        traceback.print_exc()
 
 def decrypt(key,  data):
     cstate = [0x48,  0x74,  0x65,  0x6D,  0x70,  0x39,  0x39,  0x65]
@@ -85,6 +103,8 @@ def inner_loop(args, config_data):
     set_report = bytearray(set_report)
     fcntl.ioctl(fp, HIDIOCSFEATURE_9, set_report)
 
+    meteoblue_start = time.time()
+
     while True:
         values = {}
 
@@ -98,7 +118,7 @@ def inner_loop(args, config_data):
                 decrypted = decrypt(key, data)
 
             if decrypted[4] != 0x0d or (sum(decrypted[:3]) & 0xff) != decrypted[3]:
-                print(hd(data), " => ", hd(decrypted),  "Checksum error")
+                print(hd(data), " => ", hd(decrypted),  "Checksum error", flush=True)
             else:
                 op = decrypted[0]
                 val = decrypted[1] << 8 | decrypted[2]
@@ -109,31 +129,23 @@ def inner_loop(args, config_data):
                 #print ", ".join( "%s%02X: %04X %5i" % ([" ", "*"][op==k], k, v, v) for (k, v) in sorted(values.items())), "  ",
                 ## From http://co2meters.com/Documentation/AppNotes/AN146-RAD-0401-serial-communication.pdf
                 if 0x50 in values:
-                    print("CO2: %4i" % values[0x50], end=' ')
+                    print("CO2: %4i" % values[0x50], end=' ', flush=True)
                 if 0x42 in values:
-                    print("T: %2.2f" % (values[0x42]/16.0-273.15), end=' ')
+                    print("T: %2.2f" % (values[0x42]/16.0-273.15), end=' ', flush=True)
                 if 0x44 in values:
-                    print("RH: %2.2f" % (values[0x44]/100.0), end=' ')
+                    print("RH: %2.2f" % (values[0x44]/100.0), end=' ', flush=True)
                 print()
 
         entry = LogEntry.create(
             measurement_type='sensor_recording',
             room_name=args.room_name, temperature_c=values[0x42]/16.0-273.15, co2_ppm=values[0x50])
         entry.save()
-        print('Logged entry {}'.format(entry))
+        print('Logged entry {}'.format(entry), flush=True)
 
-        try:
-            outdoor_temperature_c = meteoblue_request(config_data['meteoblue']['api_key'], config_data['meteoblue']['lat'],
+        if (time.time() - meteoblue_start) > config_data['meteoblue']['freq']:
+            meteoblue_request(config_data['meteoblue']['api_key'], config_data['meteoblue']['lat'],
                 config_data['meteoblue']['lon'])
-            meteoblue_entry = LogEntry.create(
-                measurement_type='meteoblue',
-                temperature_c=outdoor_temperature_c,
-            )
-        except requests.RequestException as e:
-            print('Error with meteoblue request: {}'.format(e))
-        except KeyError as e:
-            print('Error accessing meteoblue data: {}'.format(e))
-
+            meteoblue_start = time.time()
 
         time.sleep(60)
 
