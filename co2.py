@@ -31,6 +31,7 @@ class BaseModel(Model):
         database = db_proxy
 
 class LogEntry(BaseModel):
+    measurement_type = CharField(index=True, default='sensor_recording')
     room_name = CharField(index=True)
     recorded = DateTimeField(default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
     temperature_c = FloatField()
@@ -107,7 +108,9 @@ def inner_loop(args):
                     print("RH: %2.2f" % (values[0x44]/100.0), end=' ')
                 print()
 
-        entry = LogEntry.create(room_name=args.room_name, temperature_c=values[0x42]/16.0-273.15, co2_ppm=values[0x50])
+        entry = LogEntry.create(
+            measurement_type='sensor_recording',
+            room_name=args.room_name, temperature_c=values[0x42]/16.0-273.15, co2_ppm=values[0x50])
         entry.save()
         print('Logged entry {}'.format(entry))
 
