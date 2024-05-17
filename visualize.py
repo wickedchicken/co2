@@ -1,6 +1,10 @@
-import plotly.express as px
 import argparse
 from datetime import datetime, timezone
+
+import pandas
+
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 from playhouse.mysql_ext import MariaDBConnectorDatabase
 
@@ -16,10 +20,15 @@ def plot(x, y):
     fig.write_html('data.html', auto_open=True)
 
 def get_data(args):
-    begin = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
+    begin = datetime(2024, 1, 1, 00, 00, tzinfo=timezone.utc)
     # end = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
     end = datetime.now(timezone.utc)
     return LogEntry.select().where(LogEntry.recorded.between(begin, end)).order_by(LogEntry.recorded)
+
+def data_frame_from_peewee_query(query):
+    connection = query._database.connection()
+    sql, params = query.sql()
+    return pandas.read_sql_query(sql, connection, params=params)
 
 def main():
     config_data = get_config_data()
@@ -37,9 +46,19 @@ def main():
     db_proxy.initialize(db)
     db.connect()
     try:
-        data = get_data(args)
-        for row in data.tuples():
-            print(row)
+        data = data_frame_from_peewee_query(get_data(args))
+        fig = make_subplots(rows=2, cols=1)
+        fig.add_trace(
+            go.Scatter(
+            x=data["recorded"], y=data["temperature_c"]),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(
+            x=data["recorded"], y=data["co2_ppm"]),
+            row=2, col=1
+        )
+        fig.show()
     finally:
         db.close()
 
