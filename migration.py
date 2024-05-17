@@ -18,7 +18,7 @@ db = MariaDBConnectorDatabase(
     user=db_login,
     password=db_password,
 )
-migrator = SchemaMigrator(db)
+migrator = MySQLMigrator(db)
 with db.transaction():
     migrate(
         migrator.add_column('logentry', 'measurement_type', measurement_type),
