@@ -10,6 +10,10 @@ from playhouse.mysql_ext import MariaDBConnectorDatabase
 
 from co2 import get_config_data, get_db_connection_data, db_proxy, LogEntry
 
+BEGIN_DATE = datetime(2024, 1, 1, 00, 00, tzinfo=timezone.utc)
+END_DATE = datetime.now(timezone.utc)
+# end = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
+
 def get_args():
     parser = argparse.ArgumentParser()
     return parser.parse_args()
@@ -20,10 +24,10 @@ def plot(x, y):
     fig.write_html('data.html', auto_open=True)
 
 def get_data(args):
-    begin = datetime(2024, 1, 1, 00, 00, tzinfo=timezone.utc)
-    # end = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
-    end = datetime.now(timezone.utc)
-    return LogEntry.select().where(LogEntry.recorded.between(begin, end)).order_by(LogEntry.recorded)
+    return LogEntry.select().where(LogEntry.recorded.between(BEGIN_DATE, END_DATE)).where(LogEntry.measurement_type == 'sensor_recording').order_by(LogEntry.recorded)
+
+def get_meteoblue_data(args):
+    return LogEntry.select().where(LogEntry.recorded.between(BEGIN_DATE, END_DATE)).where(LogEntry.measurement_type == 'meteoblue').order_by(LogEntry.recorded)
 
 def data_frame_from_peewee_query(query):
     connection = query._database.connection()
@@ -47,15 +51,27 @@ def main():
     db.connect()
     try:
         data = data_frame_from_peewee_query(get_data(args))
-        fig = make_subplots(rows=2, cols=1)
+        meteoblue_data = data_frame_from_peewee_query(get_meteoblue_data(args))
+        fig = make_subplots(rows=2, cols=1, x_title="All times in UTC")
         fig.add_trace(
             go.Scatter(
-            x=data["recorded"], y=data["temperature_c"]),
+            x=data["recorded"], y=data["temperature_c"],
+            name="recorded temperature",
+            ),
             row=1, col=1
         )
         fig.add_trace(
             go.Scatter(
-            x=data["recorded"], y=data["co2_ppm"]),
+            x=meteoblue_data["recorded"], y=meteoblue_data["temperature_c"],
+            name="meteoblue temperature",
+            ),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(
+            x=data["recorded"], y=data["co2_ppm"],
+            name="recorded co2",
+            ),
             row=2, col=1
         )
         fig.show()
