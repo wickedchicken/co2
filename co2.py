@@ -12,6 +12,8 @@ from pathlib import Path
 from peewee import *
 from playhouse.mysql_ext import MariaDBConnectorDatabase
 
+import requests
+
 CONFIG_FILE = Path(Path(__file__).parent, 'co2.toml')
 
 def get_config_data():
@@ -34,8 +36,14 @@ class LogEntry(BaseModel):
     measurement_type = CharField(index=True, default='sensor_recording')
     room_name = CharField(index=True)
     recorded = DateTimeField(default=lambda: datetime.datetime.now(datetime.timezone.utc), index=True)
-    temperature_c = FloatField()
-    co2_ppm = FloatField()
+    temperature_c = FloatField(null=True)
+    co2_ppm = FloatField(null=True)
+
+
+def meteoblue_request(meteoblue_key, lat, lon):
+    url = f"https://my.meteoblue.com/packages/current?apikey={meteoblue_key}&lat={lat}&lon={lon}&format=json"
+    print(url)
+    return requests.get(url).json()['temperature']
 
 def decrypt(key,  data):
     cstate = [0x48,  0x74,  0x65,  0x6D,  0x70,  0x39,  0x39,  0x65]
@@ -66,7 +74,7 @@ def decrypt(key,  data):
 def hd(d):
     return " ".join("%02X" % e for e in d)
 
-def inner_loop(args):
+def inner_loop(args, config_data):
     # Key retrieved from /dev/random, guaranteed to be random ;)
     key = [0xc4, 0xc6, 0xc0, 0x92, 0x40, 0x23, 0xdc, 0x96]
 
@@ -114,6 +122,18 @@ def inner_loop(args):
         entry.save()
         print('Logged entry {}'.format(entry))
 
+        try:
+            outdoor_temperature_c = meteoblue_request(config_data['meteoblue']['api_key'], config_data['meteoblue']['lat'],
+                config_data['meteoblue']['lon'])
+            meteoblue_entry = LogEntry.create(
+                measurement_type='meteoblue',
+                temperature_c=outdoor_temperature_c,
+            )
+        except requests.RequestException as e:
+            print('Error with meteoblue request: {}'.format(e))
+        except KeyError as e:
+            print('Error accessing meteoblue data: {}'.format(e))
+
 
         time.sleep(60)
 
@@ -156,7 +176,7 @@ if __name__ == "__main__":
     try:
         if args.create_tables:
             db.create_tables([LogEntry])
-        inner_loop(args)
+        inner_loop(args, config_data)
     finally:
         db.close()
 
