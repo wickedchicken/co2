@@ -13,6 +13,9 @@ from pathlib import Path
 from peewee import *
 from playhouse.mysql_ext import MariaDBConnectorDatabase
 
+from digitemp.master import UART_Adapter
+from digitemp.device import TemperatureSensor
+
 import requests
 
 CONFIG_FILE = Path(Path(__file__).parent, 'co2.toml')
@@ -62,6 +65,17 @@ def meteoblue_request(meteoblue_key, lat, lon):
     except KeyError:
         print('Error accessing meteoblue data', flush=True)
         traceback.print_exc()
+
+def contact_sensor_request(device_path):
+    sensor = TemperatureSensor(UART_Adapter(str(device_path)))
+    temperature_c = sensor.get_temperature()
+    usbtemp_entry = LogEntry.create(
+        measurement_type='usbtemp',
+        temperature_c=temperature_c,
+        room_name='living room wall',
+    )
+    usbtemp_entry.save()
+    print('Logged usbtemp entry {}'.format(usbtemp_entry), flush=True)
 
 def decrypt(key,  data):
     cstate = [0x48,  0x74,  0x65,  0x6D,  0x70,  0x39,  0x39,  0x65]
@@ -142,6 +156,8 @@ def inner_loop(args, config_data):
         entry.save()
         print('Logged entry {}'.format(entry), flush=True)
 
+        contact_sensor_request(args.usbtemp_device_path)
+
         if (time.time() - meteoblue_start) > config_data['meteoblue']['freq']:
             meteoblue_request(config_data['meteoblue']['api_key'], config_data['meteoblue']['lat'],
                 config_data['meteoblue']['lon'])
@@ -156,6 +172,12 @@ def get_args():
         help="path to the device to read from, such as /dev/co2mini0",
         type=Path,
         default=Path(glob.glob("/dev/co2mini*")[0]),
+    )
+    parser.add_argument(
+        "--usbtemp-device-path",
+        help="path to the device to read from, such as /dev/usbtemp0",
+        type=Path,
+        default=Path(glob.glob("/dev/usbtemp*")[0]),
     )
     parser.add_argument(
         "--create-tables",

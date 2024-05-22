@@ -1,3 +1,4 @@
 mariadb
 peewee
 requests
+pydigitemp
