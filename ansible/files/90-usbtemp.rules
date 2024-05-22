@@ -1,0 +1,5 @@
+ACTION=="remove", GOTO="usbtemp_end"
+
+SUBSYSTEMS=="usb", SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", GROUP="plugdev", MODE="0660", SYMLINK+="usbtemp%n", GOTO="usbtemp_end"
+
+LABEL="usbtemp_end"

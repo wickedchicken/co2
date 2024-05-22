@@ -20,12 +20,15 @@
     - name: Set up udev rules
       become: true
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/files/90-co2mini.rules"
+        src: "{{ playbook_dir }}/files/{{ item }}"
         dest: "/etc/udev/rules.d/"
         owner: "root"
         group: "root"
         mode: '0644'
       register: udev_rules
+      loop:
+        - 90-co2mini.rules
+        - 90-usbtemp.rules
 
     - name: Reload udev rules
       become: true
