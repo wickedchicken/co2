@@ -1,3 +1,4 @@
+ha-mqtt-discoverable
 mariadb
 peewee
 requests

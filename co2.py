@@ -16,9 +16,15 @@ from playhouse.mysql_ext import MariaDBConnectorDatabase
 from digitemp.master import UART_Adapter
 from digitemp.device import TemperatureSensor
 
+from ha_mqtt_discoverable import Settings
+from ha_mqtt_discoverable.sensors import Sensor, SensorInfo
+
+
 import requests
 
 CONFIG_FILE = Path(Path(__file__).parent, 'co2.toml')
+
+SENSORS = {}
 
 def get_config_data():
     with open(CONFIG_FILE, "rb") as f:
@@ -29,6 +35,38 @@ def get_db_connection_data(config_data):
     parsed_netrc = netrc.netrc()
     login, _, password = parsed_netrc.authenticators(netrc_host)
     return login, password
+
+
+def setup_sensors(config_data):
+    # Configure the required parameters for the MQTT broker
+    mqtt_settings = Settings.MQTT(
+        host=config_data['mqtt']['host'],
+        username=config_data['mqtt']['username'],
+        password=config_data['mqtt']['password'],
+    )
+
+    for name, unique_id in [
+        ('LivingRoom', 'ecfe4ec6-fc73-419e-8564-2643efe1682b'),
+        ('LivingRoomWall', '6a92fd0d-843d-45c2-bdaf-e5ce4dba89f7'),
+        ('Meteoblue', 'f5b96581-c421-47f8-bc89-b5625dba5ec2'),
+    ]:
+        # Information about the sensor
+        sensor_info = SensorInfo(name=name, unit_of_measurement="°C", device_class="temperature", unique_id=unique_id)
+
+        settings = Settings(mqtt=mqtt_settings, entity=sensor_info)
+
+        # Instantiate the sensor
+        SENSORS[name] = Sensor(settings)
+
+    for name, unique_id in [('LivingRoomCO2', '7f4a31c4-cd54-4256-88bc-8db894949305')]:
+        # Information about the sensor
+        sensor_info = SensorInfo(name=name, device_class="carbon_dioxide", unique_id=unique_id)
+
+        settings = Settings(mqtt=mqtt_settings, entity=sensor_info)
+
+        # Instantiate the sensor
+        SENSORS[name] = Sensor(settings)
+
 
 db_proxy = DatabaseProxy() # Create a proxy for our db.
 
@@ -59,6 +97,7 @@ def meteoblue_request(meteoblue_key, lat, lon):
         )
         meteoblue_entry.save()
         print('Logged meteoblue entry {}'.format(meteoblue_entry), flush=True)
+        SENSORS['Meteoblue'].set_state(outdoor_temperature_c)
     except requests.RequestException:
         print('Error with meteoblue request:', flush=True)
         traceback.print_exc()
@@ -76,6 +115,7 @@ def contact_sensor_request(device_path):
     )
     usbtemp_entry.save()
     print('Logged usbtemp entry {}'.format(usbtemp_entry), flush=True)
+    SENSORS['LivingRoomWall'].set_state(temperature_c)
 
 def decrypt(key,  data):
     cstate = [0x48,  0x74,  0x65,  0x6D,  0x70,  0x39,  0x39,  0x65]
@@ -150,11 +190,17 @@ def inner_loop(args, config_data):
                     print("RH: %2.2f" % (values[0x44]/100.0), end=' ', flush=True)
                 print()
 
+        co2_ppm = values[0x50]
+        temperature_c = values[0x42]/16.0-273.15
+
         entry = LogEntry.create(
             measurement_type='sensor_recording',
-            room_name=args.room_name, temperature_c=values[0x42]/16.0-273.15, co2_ppm=values[0x50])
+            room_name=args.room_name, temperature_c=temperature_c, co2_ppm=co2_ppm)
         entry.save()
         print('Logged entry {}'.format(entry), flush=True)
+
+        SENSORS['LivingRoom'].set_state(temperature_c)
+        SENSORS['LivingRoomCO2'].set_state(co2_ppm)
 
         contact_sensor_request(args.usbtemp_device_path)
 
@@ -195,6 +241,7 @@ def get_args():
 if __name__ == "__main__":
     config_data = get_config_data()
     db_login, db_password = get_db_connection_data(config_data)
+    setup_sensors(config_data)
 
     args = get_args()
 
