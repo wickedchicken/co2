@@ -1,5 +1,5 @@
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas
 
@@ -10,8 +10,9 @@ from playhouse.mysql_ext import MariaDBConnectorDatabase
 
 from co2 import get_config_data, get_db_connection_data, db_proxy, LogEntry
 
-BEGIN_DATE = datetime(2024, 5, 1, 00, 00, tzinfo=timezone.utc)
+#BEGIN_DATE = datetime(2024, 5, 1, 00, 00, tzinfo=timezone.utc)
 END_DATE = datetime.now(timezone.utc)
+BEGIN_DATE = END_DATE - timedelta(days=30)
 # end = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
 
 def get_args():
