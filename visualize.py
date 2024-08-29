@@ -12,11 +12,13 @@ from co2 import get_config_data, get_db_connection_data, db_proxy, LogEntry
 
 #BEGIN_DATE = datetime(2024, 5, 1, 00, 00, tzinfo=timezone.utc)
 END_DATE = datetime.now(timezone.utc)
-BEGIN_DATE = END_DATE - timedelta(days=30)
+BEGIN_DATE = None
+#END_DATE - timedelta(days=30)
 # end = datetime(2023, 7, 27, 00, 00, tzinfo=timezone.utc)
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--days-back', type=int, default=30)
     return parser.parse_args()
 
 
@@ -45,6 +47,12 @@ def main():
     db_login, db_password = get_db_connection_data(config_data)
 
     args = get_args()
+
+    global BEGIN_DATE
+
+
+    BEGIN_DATE = END_DATE - timedelta(days=args.days_back)
+
 
     db = MariaDBConnectorDatabase(
         config_data['database']['name'],
