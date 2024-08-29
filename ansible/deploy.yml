@@ -39,10 +39,10 @@
 
     - name: Create venv
       ansible.builtin.command:
-        cmd: "/home/{{ ansible_user}}/.pyenv/bin/pyenv exec python -m venv /home/{{ ansible_user}}/{{ working_dir }}/venv"
+        cmd: "/home/{{ ansible_user}}/.pyenv/bin/pyenv exec python -m venv /home/{{ ansible_user }}/{{ working_dir }}/venv"
       environment:
         PYENV_VERSION: "{{ python_version }}"
-      when: ((not venv_stat_output.stat.isdir is defined) and (not venv_stat_output.stat.isdir)) or python_version_output.changed
+      when: ((not venv_stat_output.stat.isdir is defined) or (not venv_stat_output.stat.isdir)) or python_version_output.changed
       register: create_venv_output
 
     - name: Copy requirements.txt file
